@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}Cifrado AES-256{% endblock %}
+{% block content %}
+
+<h4 class="fw-bold mb-4"><i class="bi bi-lock me-2"></i>Cifrado AES-256-GCM — GDPR Art. 25</h4>
+
+<ul class="nav nav-tabs mb-4" id="cifradoTab">
+  <li class="nav-item">
+    <a class="nav-link {% if not resultado or resultado.get('accion')=='cifrar' or not resultado %}active{% endif %}" href="#cifrar" data-bs-toggle="tab">
+      <i class="bi bi-lock-fill me-1"></i>Cifrar datos
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if resultado and resultado.get('accion')=='descifrar' %}active{% endif %}" href="#descifrar" data-bs-toggle="tab">
+      <i class="bi bi-unlock-fill me-1"></i>Descifrar datos
+    </a>
+  </li>
+</ul>
+
+<div class="tab-content">
+  <!-- CIFRAR -->
+  <div class="tab-pane fade {% if not resultado or resultado.get('accion')!='descifrar' %}show active{% endif %}" id="cifrar">
+    <div class="row g-4">
+      <div class="col-md-5">
+        <div class="card">
+          <div class="card-header bg-danger text-white"><i class="bi bi-database-lock me-2"></i>Datos del paciente a cifrar</div>
+          <div class="card-body">
+            <form method="POST">
+              <input type="hidden" name="accion" value="cifrar">
+              <div class="mb-3">
+                <label class="form-label">ID Paciente</label>
+                <input type="text" name="id_paciente" class="form-control" value="paciente-001" required>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">FC en reposo (BPM)</label>
+                <input type="number" name="bpm" class="form-control" value="75" required>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">SpO2 (%)</label>
+                <input type="number" step="0.1" name="spo2" class="form-control" value="98.5" required>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Temperatura (°C)</label>
+                <input type="number" step="0.1" name="temperatura" class="form-control" value="36.5" required>
+              </div>
+              <div class="mb-4">
+                <label class="form-label">Clave de cifrado (contraseña)</label>
+                <input type="text" name="clave" class="form-control" value="mi_clave_secreta_2025" required>
+                <small class="text-muted">Se derivará PBKDF2-SHA256 con 100,000 iteraciones</small>
+              </div>
+              <button type="submit" class="btn btn-danger w-100">
+                <i class="bi bi-lock-fill me-1"></i>Cifrar con AES-256-GCM
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-7">
+        {% if resultado and resultado.get('accion') == 'cifrar' %}
+          {% if resultado.get('error') %}
+          <div class="alert alert-danger">{{ resultado.error }}</div>
+          {% else %}
+          <div class="card border-success">
+            <div class="card-header bg-success text-white"><i class="bi bi-check-circle me-2"></i>Cifrado completado</div>
+            <div class="card-body">
+              <table class="table table-sm">
+                <tr><th>ID Paciente</th><td>{{ resultado.id_paciente }}</td></tr>
+                <tr><th>Algoritmo</th><td><span class="badge bg-success">AES-256-GCM</span></td></tr>
+                <tr><th>Derivación clave</th><td>PBKDF2-SHA256 · 100,000 iter</td></tr>
+              </table>
+              <hr>
+              <div class="mb-3">
+                <label class="form-label fw-semibold">Datos cifrados (Base64):</label>
+                <textarea class="form-control font-monospace" rows="3" readonly>{{ resultado.cifrado }}</textarea>
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold">Nonce (Base64):</label>
+                <input type="text" class="form-control font-monospace" readonly value="{{ resultado.nonce }}">
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold">Salt (Base64):</label>
+                <input type="text" class="form-control font-monospace" readonly value="{{ resultado.salt }}">
+              </div>
+              <div class="alert alert-info mb-0 small">
+                <i class="bi bi-info-circle me-1"></i> Sin la clave correcta, los datos son matemáticamente irrecuperables. Cumple GDPR Art. 25 (Privacy by Design).
+              </div>
+            </div>
+          </div>
+          {% endif %}
+        {% else %}
+        <div class="card h-100">
+          <div class="card-body d-flex align-items-center justify-content-center text-muted">
+            <div class="text-center py-5">
+              <i class="bi bi-shield-lock fs-1 mb-3 d-block"></i>
+              <h6>El resultado del cifrado aparecerá aquí</h6>
+              <p class="small">Los datos se cifran localmente antes de cualquier transmisión.</p>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- DESCIFRAR -->
+  <div class="tab-pane fade {% if resultado and resultado.get('accion')=='descifrar' %}show active{% endif %}" id="descifrar">
+    <div class="row g-4">
+      <div class="col-md-5">
+        <div class="card">
+          <div class="card-header bg-primary text-white"><i class="bi bi-unlock-fill me-2"></i>Descifrar datos del paciente</div>
+          <div class="card-body">
+            <form method="POST">
+              <input type="hidden" name="accion" value="descifrar">
+              <div class="mb-3">
+                <label class="form-label">ID Paciente</label>
+                <input type="text" name="id_paciente" class="form-control" value="paciente-001" required>
+                <small class="text-muted">El paciente debe haberse cifrado previamente</small>
+              </div>
+              <div class="mb-4">
+                <label class="form-label">Clave de cifrado</label>
+                <input type="text" name="clave" class="form-control" value="mi_clave_secreta_2025" required>
+              </div>
+              <button type="submit" class="btn btn-primary w-100">
+                <i class="bi bi-unlock-fill me-1"></i>Descifrar y mostrar datos
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-7">
+        {% if resultado and resultado.get('accion') == 'descifrar' %}
+          {% if resultado.get('error') %}
+          <div class="card border-danger">
+            <div class="card-header bg-danger text-white"><i class="bi bi-x-circle me-2"></i>Error al descifrar</div>
+            <div class="card-body">
+              <div class="alert alert-danger mb-0">{{ resultado.error }}</div>
+              <p class="mt-3 small text-muted">Posibles causas: clave incorrecta, datos no existen, datos corruptos.</p>
+            </div>
+          </div>
+          {% else %}
+          <div class="card border-primary">
+            <div class="card-header bg-primary text-white"><i class="bi bi-check-circle me-2"></i>Datos descifrados correctamente</div>
+            <div class="card-body">
+              <table class="table">
+                {% for clave_d, valor in resultado.datos.items() %}
+                <tr>
+                  <th>{{ clave_d }}</th>
+                  <td>{{ valor }}</td>
+                </tr>
+                {% endfor %}
+              </table>
+              <div class="alert alert-success mb-0 small">
+                <i class="bi bi-shield-check me-1"></i>Integridad verificada por GCM Tag — los datos no fueron alterados.
+              </div>
+            </div>
+          </div>
+          {% endif %}
+        {% else %}
+        <div class="card h-100">
+          <div class="card-body d-flex align-items-center justify-content-center text-muted">
+            <div class="text-center py-5">
+              <i class="bi bi-file-earmark-medical fs-1 mb-3 d-block"></i>
+              <h6>Primero cifra un paciente en la pestaña anterior</h6>
+              <p class="small">Luego intenta descifrar con la misma o diferente clave para ver la diferencia.</p>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
