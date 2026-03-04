@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+
+# Entorno virtual
+venv/
+.env/
+.venv/
+
+# Datos generados en tiempo de ejecucion (no son codigo)
+flash_storage/
+flash_datos/
+
+# IDEs
+.vscode/
+.idea/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
