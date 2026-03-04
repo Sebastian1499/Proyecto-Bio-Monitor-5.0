@@ -272,5 +272,229 @@ def demo_sistema_completo():
     print("#" * 60 + "\n")
 
 
+def menu_interactivo():
+    """Menu principal donde el usuario puede probar cada modulo."""
+
+    # Inicializar subsistemas una sola vez
+    auth_server = ServidorAutenticacion(expiracion_segundos=3600)
+    guardian    = GuardianRecursos(auth_server)
+    flash       = AlmacenamientoFlashSimulado(ruta_base="flash_datos")
+    blockchain  = BlockchainLogs()
+    servidor_ota = ServidorFirmware()
+
+    print("\n  Entrenando modelo IA... (espera un momento)")
+    X, y = generar_datos_ecg(n_muestras=1200)
+    modelo_ia = ModeloArritmias()
+    precision, _ = modelo_ia.entrenar(X, y)
+
+    # Token activo de la sesion
+    token_activo = None
+    usuario_activo = None
+
+    opciones = """
+╔══════════════════════════════════════════════════════════╗
+║           BIO-MONITOR 5.0  —  Menu Principal             ║
+╠══════════════════════════════════════════════════════════╣
+║  1. Iniciar sesion (OAuth2)                              ║
+║  2. Cifrar y guardar datos del paciente (AES-256)        ║
+║  3. Analizar arritmia con IA (Edge AI + XAI)             ║
+║  4. Ver datos descifrados del paciente                   ║
+║  5. Simular actualizacion OTA (firma RSA)                ║
+║  6. Borrado Seguro — Derecho al Olvido (GDPR)            ║
+║  7. Ver historial de logs (Blockchain)                   ║
+║  8. Ejecutar demo automatica completa                    ║
+║  0. Salir                                                ║
+╚══════════════════════════════════════════════════════════╝"""
+
+    while True:
+        print(opciones)
+        if usuario_activo:
+            print(f"  Sesion activa: {usuario_activo}")
+        opcion = input("\n  Elige una opcion: ").strip()
+
+        # --------------------------------------------------
+        if opcion == "1":
+            separador("LOGIN — OAuth2 / OpenID Connect")
+            print("  Usuarios disponibles: dr.garcia / paciente1 / device-007 / admin")
+            print("  Contrasenas:          pass123   / mipass    / devicepass  / adminpass")
+            usuario  = input("\n  Usuario:    ").strip()
+            password = input("  Contrasena: ").strip()
+            try:
+                tokens = auth_server.autenticar(usuario, password)
+                token_activo   = tokens["access_token"]
+                usuario_activo = usuario
+                print(f"\n  Login exitoso.")
+                print(f"  Token JWT: {token_activo[:60]}...")
+                print(f"  Permisos:  {tokens['scope']}")
+                print(f"  Expira en: {tokens['expires_in']} segundos")
+                blockchain.registrar(EntradaLog(
+                    usuario, "usuario", "LOGIN", "sistema", "192.168.1.1", "PERMITIDO"))
+            except (ValueError, PermissionError) as e:
+                print(f"\n  ERROR: {e}")
+                blockchain.registrar(EntradaLog(
+                    usuario, "desconocido", "LOGIN", "sistema", "192.168.1.1", "DENEGADO", str(e)))
+
+        # --------------------------------------------------
+        elif opcion == "2":
+            separador("CIFRAR DATOS CON AES-256")
+            id_pac = input("  ID del paciente (ej: P-00123): ").strip() or "P-00123"
+            bpm    = input("  BPM (ej: 98):                  ").strip() or "98"
+            spo2   = input("  SpO2 % (ej: 97.5):             ").strip() or "97.5"
+            temp   = input("  Temperatura (ej: 36.8):        ").strip() or "36.8"
+            clave  = input("  Clave del dispositivo:         ").strip() or "clave-demo"
+
+            datos = f'{{"bpm": {bpm}, "spo2": {spo2}, "temp": {temp}, "paciente_id": "{id_pac}"}}'
+            print(f"\n  Datos originales:  {datos}")
+
+            paquete = cifrar_datos(datos, clave)
+            flash.guardar(id_pac, str(paquete).encode())
+
+            print(f"  Datos cifrados:    {paquete['cifrado'][:40]}...")
+            print(f"  Nonce (unico):     {paquete['nonce']}")
+            print(f"  Salt (derivacion): {paquete['salt']}")
+            print(f"\n  Guardado en Flash. Sin la clave '{clave}' es ilegible.")
+
+            blockchain.registrar(EntradaLog(
+                usuario_activo or "anonimo", "usuario", "ESCRITURA",
+                f"ECG_{id_pac}", "10.0.0.1", "PERMITIDO", "AES-256-GCM"))
+
+        # --------------------------------------------------
+        elif opcion == "3":
+            separador("ANALISIS DE ARRITMIA — Edge AI + XAI")
+            print("  Ingresa los datos del ECG (Enter para usar valores de ejemplo):")
+            bpm   = float(input("  BPM            (ej: 140): ").strip() or "140")
+            rr    = float(input("  Intervalo RR ms (ej: 428): ").strip() or "428")
+            varrr = float(input("  Variabilidad RR (ej: 12):  ").strip() or "12")
+            qrs   = float(input("  Amplitud QRS mV (ej: 1.2): ").strip() or "1.2")
+            pr    = float(input("  Intervalo PR ms (ej: 130): ").strip() or "130")
+            spo2  = float(input("  SpO2 %          (ej: 95):  ").strip() or "95")
+
+            resultado = modelo_ia.predecir({
+                "bpm": bpm, "intervalo_rr": rr, "variabilidad_rr": varrr,
+                "amplitud_qrs": qrs, "intervalo_pr": pr, "spo2": spo2
+            })
+
+            print(f"\n  ─── DIAGNOSTICO ───────────────────────────")
+            print(f"  Resultado:   {resultado['diagnostico']}")
+            print(f"  Confianza:   {resultado['confianza']}%")
+            print(f"  Emergencia:  {'SI !!!' if resultado['es_emergencia'] else 'No'}")
+            print(f"\n  Probabilidades por clase:")
+            for clase, prob in resultado['probabilidades'].items():
+                barra = "█" * int(prob / 5)
+                print(f"    {clase:<25} {prob:5.1f}%  {barra}")
+            print(f"\n  Explicacion XAI (por que este diagnostico):")
+            for feat in resultado['xai_explicacion']:
+                print(f"    - {feat['feature']}: {feat['importancia_pct']}% de peso en la decision")
+
+            if resultado['es_emergencia']:
+                print(f"\n  !!! Se enviaria alerta al medico via TLS 1.3")
+
+            blockchain.registrar(EntradaLog(
+                usuario_activo or "anonimo", "usuario", "PREDICCION_IA",
+                "ECG_MANUAL", "10.0.0.1", "PERMITIDO",
+                f"Resultado={resultado['diagnostico']}"))
+
+        # --------------------------------------------------
+        elif opcion == "4":
+            separador("DESCIFRAR DATOS DEL PACIENTE")
+            id_pac = input("  ID del paciente (ej: P-00123): ").strip() or "P-00123"
+            clave  = input("  Clave del dispositivo:         ").strip() or "clave-demo"
+
+            if not flash.existe(id_pac):
+                print(f"\n  No hay datos guardados para '{id_pac}'.")
+                print(f"  Usa la opcion 2 primero para guardar datos.")
+            else:
+                import ast
+                raw = flash._ruta_archivo(id_pac)
+                with open(raw, "rb") as f:
+                    paquete = ast.literal_eval(f.read().decode())
+                try:
+                    datos = descifrar_datos(paquete, clave)
+                    print(f"\n  Datos descifrados: {datos}")
+                    blockchain.registrar(EntradaLog(
+                        usuario_activo or "anonimo", "usuario", "LECTURA",
+                        f"ECG_{id_pac}", "192.168.1.1", "PERMITIDO"))
+                except Exception:
+                    print(f"\n  ERROR: Clave incorrecta. No se pueden descifrar los datos.")
+                    blockchain.registrar(EntradaLog(
+                        usuario_activo or "anonimo", "usuario", "LECTURA",
+                        f"ECG_{id_pac}", "192.168.1.1", "DENEGADO", "Clave incorrecta"))
+
+        # --------------------------------------------------
+        elif opcion == "5":
+            separador("ACTUALIZACION OTA — Firma Digital RSA-2048")
+            version = input("  Version del nuevo firmware (ej: 3.0.0): ").strip() or "3.0.0"
+
+            firmware = f"BIOMONITOR_FW_v{version}_RELEASE".encode() + os.urandom(128)
+            paquete_fw = servidor_ota.crear_paquete_firmware(firmware, version)
+
+            dispositivo = DispositivoIoT("BM-007", servidor_ota.obtener_clave_publica_pem())
+            print(f"\n  --- Instalando firmware legitimo ---")
+            exito = dispositivo.verificar_y_aplicar_actualizacion(paquete_fw)
+
+            print(f"\n  --- Simulando ataque: firmware adulterado ---")
+            paquete_malo = dict(paquete_fw)
+            import hashlib as _hl
+            fw_malo = b"MALWARE_" + os.urandom(128)
+            paquete_malo["firmware_hex"] = fw_malo.hex()
+            paquete_malo["hash_sha256"]  = _hl.sha256(fw_malo).hexdigest()
+            dispositivo2 = DispositivoIoT("BM-007", servidor_ota.obtener_clave_publica_pem())
+            dispositivo2.verificar_y_aplicar_actualizacion(paquete_malo)
+
+            blockchain.registrar(EntradaLog(
+                "SERVIDOR_OTA", "sistema", "ACTUALIZACION_OTA", "BM-007",
+                "10.0.0.1", "PERMITIDO" if exito else "DENEGADO", f"v{version}"))
+
+        # --------------------------------------------------
+        elif opcion == "6":
+            separador("BORRADO SEGURO — Derecho al Olvido (GDPR Art.17)")
+            id_pac = input("  ID del paciente a borrar (ej: P-00123): ").strip() or "P-00123"
+
+            if not flash.existe(id_pac):
+                print(f"\n  No hay datos de '{id_pac}' en el sistema.")
+            else:
+                confirm = input(f"\n  Confirmar borrado PERMANENTE de '{id_pac}' (s/n): ").strip().lower()
+                if confirm == "s":
+                    flash.borrado_seguro(id_pac, pasadas=3)
+                    flash.verificar_borrado(id_pac)
+                    blockchain.registrar(EntradaLog(
+                        usuario_activo or "paciente", "paciente", "BORRADO",
+                        f"ALL_{id_pac}", "192.168.1.1", "PERMITIDO", "GDPR Art.17"))
+                else:
+                    print("  Borrado cancelado.")
+
+        # --------------------------------------------------
+        elif opcion == "7":
+            separador("HISTORIAL DE LOGS — Blockchain")
+            print(f"  Total de bloques en la cadena: {blockchain.total_bloques()}")
+            valida, errores = blockchain.verificar_integridad()
+            print(f"  Integridad: {'VALIDA' if valida else 'COMPROMETIDA'}")
+            print()
+            print(f"  {'#':<4} {'Usuario':<14} {'Accion':<24} {'Recurso':<20} {'Resultado'}")
+            print(f"  {'-'*80}")
+            for b in blockchain.exportar_auditoria()[1:]:
+                e = b['entrada']
+                print(f"  [{b['indice']:02d}] {e['usuario']:<14} {e['accion']:<24} "
+                      f"{e['recurso']:<20} {e['resultado']}")
+            fallos = blockchain.buscar_fallos_auth()
+            if fallos:
+                print(f"\n  Accesos DENEGADOS detectados: {len(fallos)}")
+
+        # --------------------------------------------------
+        elif opcion == "8":
+            demo_sistema_completo()
+
+        # --------------------------------------------------
+        elif opcion == "0":
+            print("\n  Cerrando Bio-Monitor 5.0. Hasta luego.\n")
+            break
+        else:
+            print("  Opcion no valida. Elige entre 0 y 8.")
+
+
 if __name__ == "__main__":
-    demo_sistema_completo()
+    print("\n" + "█" * 60)
+    print("  BIO-MONITOR 5.0")
+    print("  Taller: Gestion de la Innovacion y Marcos Regulatorios")
+    print("█" * 60)
+    menu_interactivo()
